@@ -1,3 +1,10 @@
+if (!file.exists("manifest.json")) {
+  if (!requireNamespace("rsconnect", quietly = TRUE)) {
+    install.packages("rsconnect")
+  }
+  rsconnect::writeManifest(appDir = ".")
+}
+
 library(shiny)
 library(shinythemes)
 library(bigrquery)
