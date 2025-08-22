@@ -1,10 +1,3 @@
-if (!file.exists("manifest.json")) {
-  if (!requireNamespace("rsconnect", quietly = TRUE)) {
-    install.packages("rsconnect")
-  }
-  rsconnect::writeManifest(appDir = ".")
-}
-
 library(shiny)
 library(shinythemes)
 library(bigrquery)
@@ -15,7 +8,7 @@ library(cobalt)
 library(ggplot2)
 library(digest)
 library(rlang)
-library(shinyjs)  # ADD THIS
+library(shinyjs)  # ADD THISg
 library(shinyalert)  # ADD THIS
 
 source("functions.R")
@@ -400,6 +393,12 @@ ui <- fluidPage(
 
 server <- function(input, output, session) {
   
+  # BigQuery authentication setup for ShinyApps.io
+  options(
+    gargle_oauth_cache = ".secrets",
+    gargle_oauth_email = TRUE
+  )
+  
   # Authentication state
   is_authenticated <- reactiveVal(FALSE)
   
@@ -416,18 +415,27 @@ server <- function(input, output, session) {
     })
   })
   
-  # Authentication button handler
+  # Authentication button handler - UPDATED FOR SHINYAPPS.IO
   observeEvent(input$auth_btn, {
     showModal(modalDialog(
       title = "Google Authentication",
-      "Please complete the Google authentication in your browser. A new window should open.",
-      footer = NULL,
+      tags$div(
+        tags$p("Please complete the Google authentication process."),
+        tags$p("1. A browser window will open for Google authentication"),
+        tags$p("2. Sign in with your Google account"),
+        tags$p("3. Grant BigQuery access permissions"),
+        tags$p("4. Return to this window")
+      ),
+      footer = modalButton("Close"),
       easyClose = FALSE
     ))
     
     tryCatch({
       # This will open browser for authentication
-      bq_auth()
+      bq_auth(
+        cache = ".secrets",
+        email = TRUE
+      )
       
       # Success
       removeModal()
@@ -439,8 +447,8 @@ server <- function(input, output, session) {
       
     }, error = function(e) {
       removeModal()
-      shinyalert("Authentication Failed",
-                 paste("Please try again. Error:", e$message),
+      shinyalert("Authentication Failed", 
+                 paste("Please try again. Error:", e$message), 
                  type = "error")
     })
   })
