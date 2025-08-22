@@ -15,7 +15,7 @@ library(cobalt)
 library(ggplot2)
 library(digest)
 library(rlang)
-library(shinyjs)  # ADD THIS
+library(shinyjs)  # ADD THISg
 library(shinyalert)  # ADD THIS
 
 source("functions.R")
