@@ -1,4 +1,15 @@
-
+library(shiny)
+library(shinythemes)
+library(bigrquery)
+library(DT)
+library(shinycssloaders)
+library(dplyr)
+library(cobalt)
+library(ggplot2)
+library(digest)
+library(rlang)
+library(shinyjs)
+library(shinyalert)
 # Helper function to check if we're on Posit Connect
 source("func.R")
 ui <- fluidPage(
