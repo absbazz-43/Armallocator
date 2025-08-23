@@ -11,7 +11,7 @@ library(rlang)
 library(shinyjs)
 library(shinyalert)
 
-source("functions.R")
+source("func.R")
 
 # Initialize shinyjs and shinyalert
 useShinyjs()
@@ -37,13 +37,20 @@ ui <- fluidPage(
                        icon = icon("google"),
                        style = "background-color: #4285F4; color: white; padding: 15px 30px; border: none; border-radius: 5px; font-size: 16px; width: 100%;"),
           br(), br(),
-          p("Your credentials are stored locally and never shared")
+          p("Your credentials are stored locally and never shared"),
+          # Add manual email input for Posit Connect
+          div(style = "margin-top: 20px; padding-top: 20px; border-top: 1px solid #eee;",
+              p("Having issues with Google sign-in?"),
+              textInput("manual_email", "Enter your @pathao.com email:", placeholder = "your.name@pathao.com"),
+              actionButton("manual_auth", "Continue with Email", style = "width: 100%;")
+          )
       )
   ),
   
+  # Main app UI (hidden initially)
   hidden(div(id = "main_ui",
              # YOUR EXISTING UI CODE STARTS HERE
-             titlePanel("Experiment Platform: Complete A/B Testing Suite"),
+             titlePanel("PEIRAMATISMOS"),
              tags$head(
                tags$head(
                  tags$style(HTML("
@@ -389,12 +396,6 @@ ui <- fluidPage(
 
 server <- function(input, output, session) {
   
-  # BigQuery authentication setup for ShinyApps.io
-  options(
-    gargle_oauth_cache = ".secrets",
-    gargle_oauth_email = TRUE
-  )
-  
   # Authentication state
   is_authenticated <- reactiveVal(FALSE)
   user_email <- reactiveVal(NULL)
@@ -405,140 +406,151 @@ server <- function(input, output, session) {
     return(is_valid)
   }
   
-  # Function to clear authentication cache completely
-  clear_auth_cache <- function() {
+  # Check if we're running on Posit Connect
+  is_posit_connect <- function() {
+    Sys.getenv("R_CONFIG_ACTIVE") == "shinyapps" || 
+      Sys.getenv("R_CONFIG_ACTIVE") == "rsconnect" ||
+      !interactive()
+  }
+  
+  # Google authentication handler
+  authenticate_google <- function() {
     tryCatch({
-      # Clear gargle cache
-      cache_folder <- gargle::gargle_oauth_cache()
-      if (dir.exists(cache_folder)) {
-        unlink(cache_folder, recursive = TRUE)
+      if (is_posit_connect()) {
+        # On Posit Connect, use service account or manual authentication
+        # For now, we'll rely on manual email input
+        return(NULL)
+      } else {
+        # Local development - use normal Google auth
+        bq_auth(
+          cache = ".secrets",
+          email = TRUE
+        )
+        return(TRUE)
       }
-      
-      # Clear bigrquery cache
-      bq_auth_cache$clear()
-      
-      # Remove any stored tokens
-      rm(list = ls(envir = globalenv()), envir = globalenv())
-      
-      # Clear environment variables
-      Sys.unsetenv("GARGLE_OAUTH_CACHE")
-      Sys.unsetenv("GARGLE_OAUTH_EMAIL")
-      
-      return(TRUE)
     }, error = function(e) {
       return(FALSE)
     })
   }
   
-  # Get user email from authentication
+  # Get user email from authentication (simplified for Posit Connect)
   get_user_email <- function() {
-    tryCatch({
-      # Get the authenticated user's email from token
-      token <- gargle::token_fetch()
-      if (!is.null(token$email)) {
-        return(token$email)
+    # On Posit Connect, we can't easily get email from Google auth
+    # So we'll use the manual input or a simulated approach
+    if (is_posit_connect()) {
+      # Return the manually entered email or a placeholder
+      if (!is.null(input$manual_email) && nzchar(input$manual_email)) {
+        return(input$manual_email)
       }
-      return(NULL)
-    }, error = function(e) {
-      return(NULL)
-    })
+      return("user@pathao.com")  # Placeholder for demo
+    } else {
+      # Local development - try to get email from Google auth
+      tryCatch({
+        token <- gargle::token_fetch()
+        if (!is.null(token$email)) return(token$email)
+        return(NULL)
+      }, error = function(e) {
+        return(NULL)
+      })
+    }
   }
   
-  # Check if already authenticated on app start - BUT DON'T AUTO-LOGIN
-  observe({
-    # Don't try to auto-authenticate on app start
-    # Let users explicitly click the login button
+  # Manual authentication handler for Posit Connect
+  observeEvent(input$manual_auth, {
+    email <- trimws(input$manual_email)
+    
+    if (nzchar(email)) {
+      if (verify_pathao_email(email)) {
+        # Success - Pathao email verified
+        is_authenticated(TRUE)
+        user_email(email)
+        hide("auth_ui")
+        show("main_ui")
+        shinyalert("Welcome!", paste("Authenticated as:", email), type = "success")
+      } else {
+        # Not a Pathao email
+        shinyalert("Access Denied", 
+                   paste("Only @pathao.com emails are allowed.\n",
+                         "Please use your Pathao email address."), 
+                   type = "error")
+      }
+    } else {
+      shinyalert("Error", "Please enter your @pathao.com email address.", type = "error")
+    }
   })
   
-  # Authentication button handler with email verification
+  # Google authentication button handler
   observeEvent(input$auth_btn, {
     showModal(modalDialog(
       title = "Google Authentication",
       tags$div(
-        tags$p("Please sign in with your Pathao Google account (@pathao.com)"),
-        tags$p("1. A browser window will open for Google authentication"),
-        tags$p("2. Sign in with your @pathao.com account"),
-        tags$p("3. Grant BigQuery access permissions"),
-        tags$p("4. Return to this window")
+        if (is_posit_connect()) {
+          tags$p("On Posit Connect, please use the manual email input below for authentication.")
+        } else {
+          tagList(
+            tags$p("Please sign in with your Pathao Google account (@pathao.com)"),
+            tags$p("1. A browser window will open for Google authentication"),
+            tags$p("2. Sign in with your @pathao.com account"),
+            tags$p("3. Grant BigQuery access permissions"),
+            tags$p("4. Return to this window")
+          )
+        }
       ),
       footer = modalButton("Close"),
       easyClose = FALSE
     ))
     
-    # Clear any previous authentication first
-    clear_auth_cache()
+    if (is_posit_connect()) {
+      # On Posit Connect, suggest using manual authentication
+      removeModal()
+      shinyalert("Info", 
+                 "For Posit Connect deployment, please use the manual email input below the Google sign-in button.", 
+                 type = "info")
+      return()
+    }
     
     tryCatch({
-      # This will open browser for authentication
-      bq_auth(
-        cache = ".secrets",
-        email = TRUE
-      )
+      # Local development - use Google auth
+      success <- authenticate_google()
       
-      # Get user email and verify
-      email <- get_user_email()
-      
-      if (is.null(email)) {
-        removeModal()
-        clear_auth_cache()
-        shinyalert("Authentication Error", 
-                   "Could not retrieve your email address. Please try again.", 
-                   type = "error")
-        return()
-      }
-      
-      if (!verify_pathao_email(email)) {
-        # Not a Pathao email - show error and CLEAR EVERYTHING
-        removeModal()
-        clear_auth_cache()  # Force clear all authentication
-        bq_deauth()
+      if (success) {
+        email <- get_user_email()
         
-        shinyalert("Access Denied", 
-                   paste("Only Pathao employees with @pathao.com emails can access this platform.\n",
-                         "Detected email:", email, "\n",
-                         "Please sign in with your Pathao Google account."), 
+        if (!is.null(email) && verify_pathao_email(email)) {
+          # Success
+          removeModal()
+          is_authenticated(TRUE)
+          user_email(email)
+          hide("auth_ui")
+          show("main_ui")
+          shinyalert("Welcome!", paste("Authenticated as:", email), type = "success")
+        } else {
+          removeModal()
+          shinyalert("Authentication Error", 
+                     "Could not verify Pathao email. Please try again.", 
+                     type = "error")
+        }
+      } else {
+        removeModal()
+        shinyalert("Authentication Failed", 
+                   "Google authentication failed. Please try again or use manual email input.", 
                    type = "error")
-        return()
       }
-      
-      # Success - Pathao email verified
-      removeModal()
-      is_authenticated(TRUE)
-      user_email(email)
-      hide("auth_ui")
-      show("main_ui")
-      
-      shinyalert("Welcome!", paste("Successfully authenticated as:", email), type = "success")
       
     }, error = function(e) {
       removeModal()
-      clear_auth_cache()  # Clear on any error
       shinyalert("Authentication Failed", 
-                 paste("Please try again. Error:", e$message), 
+                 paste("Error:", e$message), 
                  type = "error")
     })
   })
   
-  # Logout functionality
-  observeEvent(input$logout_btn, {
-    clear_auth_cache()
-    bq_deauth()
-    is_authenticated(FALSE)
-    user_email(NULL)
-    hide("main_ui")
-    show("auth_ui")
-    shinyalert("Logged Out", "You have been successfully logged out.", type = "info")
-  })
-  
-  # Display user email and logout button in the app
+  # Display user email in the app
   output$user_info <- renderUI({
     req(user_email())
     tags$div(
       style = "position: absolute; top: 10px; right: 10px; background: #f8f9fa; padding: 8px 15px; border-radius: 20px; border: 1px solid #ddd;",
-      tags$span(icon("user"), "Logged in as: ", tags$strong(user_email())),
-      actionButton("logout_btn", "Logout", 
-                   icon = icon("sign-out"),
-                   style = "margin-left: 15px; padding: 2px 10px; font-size: 12px;")
+      tags$span(icon("user"), "Logged in as: ", tags$strong(user_email()))
     )
   })
   
@@ -549,10 +561,31 @@ server <- function(input, output, session) {
     ui = uiOutput("user_info")
   )
   
+  # For Posit Connect, we need to handle BigQuery authentication differently
+  # Use service account or other authentication methods
+  
   # YOUR EXISTING SERVER CODE STARTS HERE
   # Reactive values
   query_results <- reactiveVal(NULL)
   randomized_data <- reactiveVal(NULL)
+  
+  # Modified data_loader function for Posit Connect
+  data_loader <- function(project_id, query) {
+    if (is_posit_connect()) {
+      # On Posit Connect, you'll need to use service account authentication
+      # This requires setting up a service account JSON key
+      shinyalert("Info", "BigQuery access on Posit Connect requires service account setup. Please contact administrator.", type = "info")
+      return(data.frame())  # Return empty dataframe
+    } else {
+      # Local development - use normal authentication
+      bq_auth()
+      job <- bq_project_query(project_id, query)
+      results <- bq_table_download(job)
+      return(results)
+    }
+  }
+  
+  # SQL Runner Tab
   observeEvent(input$run_query, {
     req(input$project_id, input$sql_query)
     
@@ -581,6 +614,7 @@ server <- function(input, output, session) {
     })
   })
   
+  # ... [KEEP THE REST OF YOUR EXISTING SERVER CODE] ...
   output$results_table <- renderDT({
     req(query_results())
     datatable(query_results(), options = list(scrollX = TRUE, scrollY = 400))
@@ -972,4 +1006,5 @@ server <- function(input, output, session) {
 
 # Run the application
 shinyApp(ui = ui, server = server)
+
 

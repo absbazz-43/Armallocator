@@ -1,10 +1,18 @@
-# SQL Runner function
+library(bigrquery)
+
 data_loader <- function(project_id, query) {
-  bq_auth()
+  # Authenticate using gcloud command
+  system("gcloud auth application-default login", intern = FALSE)
+  
+  # Run query
   job <- bq_project_query(project_id, query)
+  
+  # Download results
   results <- bq_table_download(job)
+  
   return(results)
 }
+
 
 # Randomizer function
 data_maker <- function(experiment_data, arm_proportion, arm_no, arm_name, experiment_name,

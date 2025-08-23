@@ -1,57 +1,12 @@
-library(shiny)
-library(shinythemes)
-library(bigrquery)
-library(DT)
-library(shinycssloaders)
-library(dplyr)
-library(cobalt)
-library(ggplot2)
-library(digest)
-library(rlang)
-library(shinyjs)
-library(shinyalert)
 
-source("functions.R")
-
-# Initialize shinyjs and shinyalert
-useShinyjs()
-useShinyalert()
-
-# Check if we're on Posit Connect and set up service account
-is_posit_connect <- function() {
-  Sys.getenv("R_CONFIG_ACTIVE") %in% c("shinyapps", "rsconnect") || !interactive()
-}
-
-# Set up BigQuery authentication
-setup_bigquery_auth <- function() {
-  if (is_posit_connect()) {
-    # On Posit Connect - use service account
-    key_path <- "secrets/service-account-key.json"
-    if (file.exists(key_path)) {
-      bq_auth(path = key_path)
-      return(TRUE)
-    } else {
-      message("Service account key not found at: ", key_path)
-      return(FALSE)
-    }
-  } else {
-    # Local development - use interactive auth
-    tryCatch({
-      bq_auth(cache = ".secrets", email = TRUE)
-      return(TRUE)
-    }, error = function(e) {
-      return(FALSE)
-    })
-  }
-}
-
-# UI remains the same as before
+# Helper function to check if we're on Posit Connect
+source("func.R")
 ui <- fluidPage(
   useShinyjs(),
   useShinyalert(),
   theme = shinytheme("flatly"),
   
-  # Authentication UI
+  # Authentication UI (shown first)
   div(id = "auth_ui",
       style = "display: flex; justify-content: center; align-items: center; height: 100vh; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);",
       div(style = "background: white; padding: 40px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); text-align: center; max-width: 400px;",
@@ -65,13 +20,20 @@ ui <- fluidPage(
                        icon = icon("google"),
                        style = "background-color: #4285F4; color: white; padding: 15px 30px; border: none; border-radius: 5px; font-size: 16px; width: 100%;"),
           br(), br(),
-          p("Your credentials are stored locally and never shared")
+          p("Your credentials are stored locally and never shared"),
+          # Add manual email input for Posit Connect
+          div(style = "margin-top: 20px; padding-top: 20px; border-top: 1px solid #eee;",
+              p("Having issues with Google sign-in?"),
+              textInput("manual_email", "Enter your @pathao.com email:", placeholder = "your.name@pathao.com"),
+              actionButton("manual_auth", "Continue with Email", style = "width: 100%;")
+          )
       )
   ),
   
+  # Main app UI (hidden initially)
   hidden(div(id = "main_ui",
              # YOUR EXISTING UI CODE STARTS HERE
-             titlePanel("Experiment Platform: Complete A/B Testing Suite"),
+             titlePanel("PEIRAMATISMOS"),
              tags$head(
                tags$head(
                  tags$style(HTML("
@@ -415,8 +377,10 @@ ui <- fluidPage(
   )
 )
 
+
+
+# Add this to your server function for better authentication handling
 server <- function(input, output, session) {
-  
   # Authentication state
   is_authenticated <- reactiveVal(FALSE)
   user_email <- reactiveVal(NULL)
@@ -427,28 +391,92 @@ server <- function(input, output, session) {
     return(is_valid)
   }
   
-  # Setup BigQuery authentication on app start
-  observe({
-    if (setup_bigquery_auth()) {
-      message("BigQuery authentication successful")
+  # Check if we're running on Posit Connect
+  is_posit_connect <- function() {
+    Sys.getenv("R_CONFIG_ACTIVE") == "shinyapps" || 
+      Sys.getenv("R_CONFIG_ACTIVE") == "rsconnect" ||
+      !interactive()
+  }
+  
+  # Google authentication handler
+  authenticate_google <- function() {
+    tryCatch({
+      if (is_posit_connect()) {
+        # On Posit Connect, use service account or manual authentication
+        # For now, we'll rely on manual email input
+        return(NULL)
+      } else {
+        # Local development - use normal Google auth
+        bq_auth(
+          cache = ".secrets",
+          email = TRUE
+        )
+        return(TRUE)
+      }
+    }, error = function(e) {
+      return(FALSE)
+    })
+  }
+  
+  # Get user email from authentication (simplified for Posit Connect)
+  get_user_email <- function() {
+    # On Posit Connect, we can't easily get email from Google auth
+    # So we'll use the manual input or a simulated approach
+    if (is_posit_connect()) {
+      # Return the manually entered email or a placeholder
+      if (!is.null(input$manual_email) && nzchar(input$manual_email)) {
+        return(input$manual_email)
+      }
+      return("user@pathao.com")  # Placeholder for demo
     } else {
-      message("BigQuery authentication failed")
+      # Local development - try to get email from Google auth
+      tryCatch({
+        token <- gargle::token_fetch()
+        if (!is.null(token$email)) return(token$email)
+        return(NULL)
+      }, error = function(e) {
+        return(NULL)
+      })
+    }
+  }
+  
+  # Manual authentication handler for Posit Connect
+  observeEvent(input$manual_auth, {
+    email <- trimws(input$manual_email)
+    
+    if (nzchar(email)) {
+      if (verify_pathao_email(email)) {
+        # Success - Pathao email verified
+        is_authenticated(TRUE)
+        user_email(email)
+        hide("auth_ui")
+        show("main_ui")
+        shinyalert("Welcome!", paste("Authenticated as:", email), type = "success")
+      } else {
+        # Not a Pathao email
+        shinyalert("Access Denied", 
+                   paste("Only @pathao.com emails are allowed.\n",
+                         "Please use your Pathao email address."), 
+                   type = "error")
+      }
+    } else {
+      shinyalert("Error", "Please enter your @pathao.com email address.", type = "error")
     }
   })
-  
-  # Authentication button handler
+  # Modified authentication section
   observeEvent(input$auth_btn, {
     showModal(modalDialog(
-      title = "Authentication",
+      title = "Google Authentication",
       tags$div(
         if (is_posit_connect()) {
-          tags$p("Using service account authentication for BigQuery access")
+          tags$p("On Posit Connect, BigQuery authentication uses service accounts.")
         } else {
           tagList(
             tags$p("Please sign in with your Pathao Google account (@pathao.com)"),
             tags$p("1. A browser window will open for Google authentication"),
             tags$p("2. Sign in with your @pathao.com account"),
-            tags$p("3. Grant BigQuery access permissions")
+            tags$p("3. Grant BigQuery access permissions"),
+            tags$p("4. Return to this window")
           )
         }
       ),
@@ -457,27 +485,50 @@ server <- function(input, output, session) {
     ))
     
     tryCatch({
-      if (is_posit_connect()) {
-        # On Posit Connect - we're already authenticated via service account
-        email <- "service-account@pathao.com"  # Placeholder for service account
-      } else {
-        # Local development - interactive auth
-        bq_auth(cache = ".secrets", email = TRUE)
-        # For demo purposes, use a placeholder email
-        email <- "user@pathao.com"
+      # Test authentication with a simple query
+      test_auth <- function() {
+        # Try to authenticate
+        if (!bigrquery::bq_auth_has_token()) {
+          if (is_posit_connect()) {
+            # On Posit Connect, try service account auth
+            service_account_file <- Sys.getenv("BIGQUERY_SERVICE_ACCOUNT_FILE")
+            if (nzchar(service_account_file) && file.exists(service_account_file)) {
+              bigrquery::bq_auth(path = service_account_file)
+            } else {
+              bigrquery::bq_auth()
+            }
+          } else {
+            bigrquery::bq_auth(cache = ".secrets", email = TRUE)
+          }
+        }
+        return(TRUE)
       }
       
-      # Simulate email verification (since we can't easily get user email on Posit Connect)
-      if (verify_pathao_email(email)) {
-        removeModal()
-        is_authenticated(TRUE)
-        user_email(email)
-        hide("auth_ui")
-        show("main_ui")
-        shinyalert("Welcome!", paste("Authenticated successfully!"), type = "success")
+      success <- test_auth()
+      
+      if (success) {
+        # Get user email for verification
+        email <- get_user_email()
+        
+        if (!is.null(email) && verify_pathao_email(email)) {
+          # Success
+          removeModal()
+          is_authenticated(TRUE)
+          user_email(email)
+          hide("auth_ui")
+          show("main_ui")
+          shinyalert("Welcome!", paste("Authenticated as:", email), type = "success")
+        } else {
+          removeModal()
+          shinyalert("Authentication Error", 
+                     "Could not verify Pathao email. Please try again.", 
+                     type = "error")
+        }
       } else {
         removeModal()
-        shinyalert("Access Denied", "Only Pathao employees can access this platform.", type = "error")
+        shinyalert("Authentication Failed", 
+                   "BigQuery authentication failed. Please try again.", 
+                   type = "error")
       }
       
     }, error = function(e) {
@@ -487,31 +538,7 @@ server <- function(input, output, session) {
                  type = "error")
     })
   })
-  
-  # Modified data_loader function for service account
-  data_loader <- function(project_id, query) {
-    tryCatch({
-      if (is_posit_connect()) {
-        # On Posit Connect - ensure service account auth
-        key_path <- "secrets/service-account-key.json"
-        if (file.exists(key_path)) {
-          bq_auth(path = key_path)
-        }
-      }
-      
-      job <- bq_project_query(project_id, query)
-      results <- bq_table_download(job)
-      return(results)
-      
-    }, error = function(e) {
-      shinyalert("BigQuery Error", 
-                 paste("Failed to execute query:", e$message), 
-                 type = "error")
-      return(data.frame())
-    })
-  }
-  
-  # Display user info
+  # Display user email in the app
   output$user_info <- renderUI({
     req(user_email())
     tags$div(
@@ -520,44 +547,36 @@ server <- function(input, output, session) {
     )
   })
   
+  # Add user info to main UI
   insertUI(
     selector = "#main_ui",
     where = "afterBegin",
     ui = uiOutput("user_info")
   )
   
+  # For Posit Connect, we need to handle BigQuery authentication differently
+  # Use service account or other authentication methods
+  
   # YOUR EXISTING SERVER CODE STARTS HERE
+  # Reactive values
   query_results <- reactiveVal(NULL)
   randomized_data <- reactiveVal(NULL)
   
-  # SQL Runner Tab - UPDATED to use our new data_loader
-  observeEvent(input$run_query, {
-    req(input$project_id, input$sql_query)
-    
-    if (!nzchar(input$sql_query)) {
-      showNotification("Please enter a SQL query", type = "warning")
-      return()
+  # Modified data_loader function for Posit Connect
+  data_loader <- function(project_id, query) {
+    if (is_posit_connect()) {
+      # On Posit Connect, you'll need to use service account authentication
+      # This requires setting up a service account JSON key
+      shinyalert("Info", "BigQuery access on Posit Connect requires service account setup. Please contact administrator.", type = "info")
+      return(data.frame())  # Return empty dataframe
+    } else {
+      # Local development - use normal authentication
+      bq_auth()
+      job <- bq_project_query(project_id, query)
+      results <- bq_table_download(job)
+      return(results)
     }
-    
-    sql_query <- input$sql_query
-    if (input$limit_rows > 0 && !grepl("\\bLIMIT\\s+\\d+\\s*$", sql_query, ignore.case = TRUE)) {
-      sql_query <- paste(sql_query, "LIMIT", input$limit_rows)
-    }
-    
-    showNotification("Running query...", type = "message", duration = NULL)
-    
-    tryCatch({
-      results <- data_loader(input$project_id, sql_query)
-      query_results(results)
-      removeNotification("running")
-      showNotification(sprintf("Query completed. %d rows returned.", nrow(results)),
-                       type = "message", duration = 3)
-    }, error = function(e) {
-      removeNotification("running")
-      showNotification(sprintf("Error: %s", e$message), type = "error")
-      query_results(NULL)
-    })
-  })
+  }
   
   # SQL Runner Tab
   observeEvent(input$run_query, {
@@ -980,4 +999,5 @@ server <- function(input, output, session) {
 
 # Run the application
 shinyApp(ui = ui, server = server)
+
 

@@ -50,7 +50,7 @@ ui <- fluidPage(
   # Main app UI (hidden initially)
   hidden(div(id = "main_ui",
              # YOUR EXISTING UI CODE STARTS HERE
-             titlePanel("Experiment Platform: Complete A/B Testing Suite"),
+             titlePanel("PEIRAMATISMOS"),
              tags$head(
                tags$head(
                  tags$style(HTML("
