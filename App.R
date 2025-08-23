@@ -10,8 +10,14 @@ library(digest)
 library(rlang)
 library(shinyjs)
 library(shinyalert)
-# Helper function to check if we're on Posit Connect
-source("func.R")
+
+source("functions.R")
+
+# Initialize shinyjs and shinyalert
+useShinyjs()
+useShinyalert()
+
+# Add authentication UI at the beginning of your UI
 ui <- fluidPage(
   useShinyjs(),
   useShinyalert(),
@@ -388,10 +394,8 @@ ui <- fluidPage(
   )
 )
 
-
-
-# Add this to your server function for better authentication handling
 server <- function(input, output, session) {
+  
   # Authentication state
   is_authenticated <- reactiveVal(FALSE)
   user_email <- reactiveVal(NULL)
@@ -474,13 +478,14 @@ server <- function(input, output, session) {
       shinyalert("Error", "Please enter your @pathao.com email address.", type = "error")
     }
   })
-  # Modified authentication section
+  
+  # Google authentication button handler
   observeEvent(input$auth_btn, {
     showModal(modalDialog(
       title = "Google Authentication",
       tags$div(
         if (is_posit_connect()) {
-          tags$p("On Posit Connect, BigQuery authentication uses service accounts.")
+          tags$p("On Posit Connect, please use the manual email input below for authentication.")
         } else {
           tagList(
             tags$p("Please sign in with your Pathao Google account (@pathao.com)"),
@@ -495,30 +500,20 @@ server <- function(input, output, session) {
       easyClose = FALSE
     ))
     
+    if (is_posit_connect()) {
+      # On Posit Connect, suggest using manual authentication
+      removeModal()
+      shinyalert("Info", 
+                 "For Posit Connect deployment, please use the manual email input below the Google sign-in button.", 
+                 type = "info")
+      return()
+    }
+    
     tryCatch({
-      # Test authentication with a simple query
-      test_auth <- function() {
-        # Try to authenticate
-        if (!bigrquery::bq_auth_has_token()) {
-          if (is_posit_connect()) {
-            # On Posit Connect, try service account auth
-            service_account_file <- Sys.getenv("BIGQUERY_SERVICE_ACCOUNT_FILE")
-            if (nzchar(service_account_file) && file.exists(service_account_file)) {
-              bigrquery::bq_auth(path = service_account_file)
-            } else {
-              bigrquery::bq_auth()
-            }
-          } else {
-            bigrquery::bq_auth(cache = ".secrets", email = TRUE)
-          }
-        }
-        return(TRUE)
-      }
-      
-      success <- test_auth()
+      # Local development - use Google auth
+      success <- authenticate_google()
       
       if (success) {
-        # Get user email for verification
         email <- get_user_email()
         
         if (!is.null(email) && verify_pathao_email(email)) {
@@ -538,7 +533,7 @@ server <- function(input, output, session) {
       } else {
         removeModal()
         shinyalert("Authentication Failed", 
-                   "BigQuery authentication failed. Please try again.", 
+                   "Google authentication failed. Please try again or use manual email input.", 
                    type = "error")
       }
       
@@ -549,6 +544,7 @@ server <- function(input, output, session) {
                  type = "error")
     })
   })
+  
   # Display user email in the app
   output$user_info <- renderUI({
     req(user_email())

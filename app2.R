@@ -8,582 +8,359 @@ library(cobalt)
 library(ggplot2)
 library(digest)
 library(rlang)
-library(shinyjs)
-library(shinyalert)
 
 source("functions.R")
 
-# Initialize shinyjs and shinyalert
-useShinyjs()
-useShinyalert()
-
-# Add authentication UI at the beginning of your UI
 ui <- fluidPage(
-  useShinyjs(),
-  useShinyalert(),
   theme = shinytheme("flatly"),
+  titlePanel("Experiment Platform: Complete A/B Testing Suite"),
+  tags$head(
+    tags$style(HTML("
+      .split-container {
+        display: flex;
+        height: calc(100vh - 150px);
+        width: 100%;
+      }
+
+      .left-panel {
+        flex: 1;
+        padding: 15px;
+        border-right: 2px solid #ddd;
+        overflow-y: auto;
+        height: 100%;
+      }
+
+      .right-panel {
+        flex: 1;
+        padding: 15px;
+        overflow-y: auto;
+        height: 100%;
+      }
+
+      .sql-editor {
+        width: 100%;
+        height: calc(100% - 60px);
+        font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+        font-size: 14px;
+        resize: none;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        padding: 10px;
+      }
+
+      .results-container {
+        height: calc(100% - 40px);
+        overflow-y: auto;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+      }
+
+      .control-panel {
+        margin-bottom: 15px;
+        padding: 10px;
+        background-color: #f8f9fa;
+        border-radius: 5px;
+        border: 1px solid #e9ecef;
+      }
+
+      .tab-content {
+        height: calc(100vh - 150px);
+        overflow-y: auto;
+      }
+
+      .plot-container {
+        height: 400px;
+        margin-bottom: 20px;
+      }
+
+
+      .card {
+        margin-bottom: 20px;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      }
+      .card-header {
+        background-color: #f8f9fa;
+        padding: 15px;
+        border-bottom: 1px solid #ddd;
+        font-weight: bold;
+      }
+      .card-body {
+        padding: 20px;
+      }
+      .result-box {
+        background-color: #f8f9fa;
+        border: 1px solid #ddd;
+        border-radius: 5px;
+        padding: 15px;
+        margin-bottom: 15px;
+      }
+      .significant {
+        color: #28a745;
+        font-weight: bold;
+      }
+      .not-significant {
+        color: #dc3545;
+        font-weight: bold;
+      }
+
+    "))
+  )
+  ,
   
-  # Authentication UI (shown first)
-  div(id = "auth_ui",
-      style = "display: flex; justify-content: center; align-items: center; height: 100vh; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);",
-      div(style = "background: white; padding: 40px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); text-align: center; max-width: 400px;",
-          h2("A/B Testing Platform", style = "color: #333;"),
-          br(),
-          p("Connect to your BigQuery data to start analyzing"),
-          p("Only Pathao employees with @pathao.com emails can access this platform", 
-            style = "color: #dc3545; font-weight: bold;"),
-          br(),
-          actionButton("auth_btn", "Sign in with Google",
-                       icon = icon("google"),
-                       style = "background-color: #4285F4; color: white; padding: 15px 30px; border: none; border-radius: 5px; font-size: 16px; width: 100%;"),
-          br(), br(),
-          p("Your credentials are stored locally and never shared"),
-          # Add manual email input for Posit Connect
-          div(style = "margin-top: 20px; padding-top: 20px; border-top: 1px solid #eee;",
-              p("Having issues with Google sign-in?"),
-              textInput("manual_email", "Enter your @pathao.com email:", placeholder = "your.name@pathao.com"),
-              actionButton("manual_auth", "Continue with Email", style = "width: 100%;")
-          )
-      )
-  ),
-  
-  # Main app UI (hidden initially)
-  hidden(div(id = "main_ui",
-             # YOUR EXISTING UI CODE STARTS HERE
-             titlePanel("PEIRAMATISMOS"),
-             tags$head(
-               tags$head(
-                 tags$style(HTML("
-                            .split-container {
-                              display: flex;
-                              height: calc(100vh - 150px);
-                              width: 100%;
-                            }
-
-                            .left-panel {
-                              flex: 1;
-                              padding: 15px;
-                              border-right: 2px solid #ddd;
-                              overflow-y: auto;
-                              height: 100%;
-                            }
-
-                            .right-panel {
-                              flex: 1;
-                              padding: 15px;
-                              overflow-y: auto;
-                              height: 100%;
-                            }
-
-                            .sql-editor {
-                              width: 100%;
-                              height: calc(100% - 60px);
-                              font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-                              font-size: 14px;
-                              resize: none;
-                              border: 1px solid #ccc;
-                              border-radius: 4px;
-                              padding: 10px;
-                            }
-
-                            .results-container {
-                              height: calc(100% - 40px);
-                              overflow-y: auto;
-                              border: 1px solid #ddd;
-                              border-radius: 4px;
-                            }
-
-                            .control-panel {
-                              margin-bottom: 15px;
-                              padding: 10px;
-                              background-color: #f8f9fa;
-                              border-radius: 5px;
-                              border: 1px solid #e9ecef;
-                            }
-
-                            .tab-content {
-                              height: calc(100vh - 150px);
-                              overflow-y: auto;
-                            }
-
-                            .plot-container {
-                              height: 400px;
-                              margin-bottom: 20px;
-                            }
-
-
-                            .card {
-                              margin-bottom: 20px;
-                              border: 1px solid #ddd;
-                              border-radius: 8px;
-                              box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                            }
-                            .card-header {
-                              background-color: #f8f9fa;
-                              padding: 15px;
-                              border-bottom: 1px solid #ddd;
-                              font-weight: bold;
-                            }
-                            .card-body {
-                              padding: 20px;
-                            }
-                            .result-box {
-                              background-color: #f8f9fa;
-                              border: 1px solid #ddd;
-                              border-radius: 5px;
-                              padding: 15px;
-                              margin-bottom: 15px;
-                            }
-                            .significant {
-                              color: #28a745;
-                              font-weight: bold;
-                            }
-                            .not-significant {
-                              color: #dc3545;
-                              font-weight: bold;
-                            }
-
-                          "))
-               )
+  tabsetPanel(
+    id = "main_tabs",
+    type = "tabs",
+    
+    tabPanel("SQL Runner",
+             div(class = "control-panel",
+                 fluidRow(
+                   column(6,
+                          textInput("project_id", "Project ID:",
+                                    value = "your-project-id",
+                                    placeholder = "Enter your BigQuery project ID")
+                   ),
+                   column(6,
+                          actionButton("run_query", "Run Query",
+                                       icon = icon("play"),
+                                       class = "btn-primary"),
+                          actionButton("clear_query", "Clear",
+                                       icon = icon("trash"),
+                                       class = "btn-warning"),
+                          downloadButton("download_data", "Download CSV",
+                                         class = "btn-success")
+                   )
+                 )
              ),
-             tabsetPanel(
-               id = "main_tabs",
-               type = "tabs",
-               
-               tabPanel("SQL Runner",
-                        div(class = "control-panel",
-                            fluidRow(
-                              column(6,
-                                     textInput("project_id", "Project ID:",
-                                               value = "your-project-id",
-                                               placeholder = "Enter your BigQuery project ID")
-                              ),
-                              column(6,
-                                     actionButton("run_query", "Run Query",
-                                                  icon = icon("play"),
-                                                  class = "btn-primary"),
-                                     actionButton("clear_query", "Clear",
-                                                  icon = icon("trash"),
-                                                  class = "btn-warning"),
-                                     downloadButton("download_data", "Download CSV",
-                                                    class = "btn-success")
-                              )
-                            )
-                        ),
-                        
-                        div(class = "split-container",
-                            div(class = "left-panel",
-                                h4("SQL Editor"),
-                                tags$textarea(id = "sql_query", class = "sql-editor",
-                                              placeholder = "SELECT * FROM `project.dataset.table` LIMIT 1000",
-                                              rows = 10, ""),
-                                br(),
-                                numericInput("limit_rows", "Limit rows:",
-                                             value = 1000, min = 1, max = 100000)
-                            ),
-                            
-                            div(class = "right-panel",
-                                h4("Query Results"),
-                                div(class = "results-container",
-                                    withSpinner(
-                                      DTOutput("results_table"),
-                                      type = 4,
-                                      color = "#0dc5c1"
-                                    )
-                                ),
-                                br(),
-                                verbatimTextOutput("query_info")
-                            )
-                        )
+             
+             div(class = "split-container",
+                 div(class = "left-panel",
+                     h4("SQL Editor"),
+                     tags$textarea(id = "sql_query", class = "sql-editor",
+                                   placeholder = "SELECT * FROM `project.dataset.table` LIMIT 1000",
+                                   rows = 10, ""),
+                     br(),
+                     numericInput("limit_rows", "Limit rows:",
+                                  value = 1000, min = 1, max = 100000)
+                 ),
+                 
+                 div(class = "right-panel",
+                     h4("Query Results"),
+                     div(class = "results-container",
+                         withSpinner(
+                           DTOutput("results_table"),
+                           type = 4,
+                           color = "#0dc5c1"
+                         )
+                     ),
+                     br(),
+                     verbatimTextOutput("query_info")
+                 )
+             )
+    ),
+    
+    # Tab 2: Randomizer
+    tabPanel("Randomizer",
+             fluidRow(
+               column(4,
+                      wellPanel(
+                        h4("Randomization Settings"),
+                        numericInput("arm_no", "Number of Arms:", value = 2, min = 2, max = 10),
+                        uiOutput("arm_proportion_ui"),
+                        uiOutput("arm_name_ui"),
+                        textInput("experiment_name", "Experiment Name:", value = "experiment_1"),
+                        checkboxInput("use_smd", "Use SMD Balancing", value = FALSE),
+                        uiOutput("confounders_ui"),
+                        numericInput("smd_threshold", "SMD Threshold:", value = 0.05, min = 0.01, max = 0.2, step = 0.01),
+                        actionButton("run_randomizer", "Run Randomization", class = "btn-primary")
+                      )
                ),
-               
-               # Tab 2: Randomizer
-               tabPanel("Randomizer",
-                        fluidRow(
-                          column(4,
-                                 wellPanel(
-                                   h4("Randomization Settings"),
-                                   numericInput("arm_no", "Number of Arms:", value = 2, min = 2, max = 10),
-                                   uiOutput("arm_proportion_ui"),
-                                   uiOutput("arm_name_ui"),
-                                   textInput("experiment_name", "Experiment Name:", value = "experiment_1"),
-                                   checkboxInput("use_smd", "Use SMD Balancing", value = FALSE),
-                                   uiOutput("confounders_ui"),
-                                   numericInput("smd_threshold", "SMD Threshold:", value = 0.05, min = 0.01, max = 0.2, step = 0.01),
-                                   actionButton("run_randomizer", "Run Randomization", class = "btn-primary")
-                                 )
-                          ),
-                          column(8,
-                                 h4("Randomized Data"),
-                                 withSpinner(DTOutput("randomized_table"), type = 4),
-                                 verbatimTextOutput("randomizer_info")
-                          )
-                        )
-               ),
-               
-               # Tab 3: Covariate Balance Checker
-               tabPanel("Balance Checker",
-                        fluidRow(
-                          column(4,
-                                 wellPanel(
-                                   h4("Balance Check Settings"),
-                                   selectInput("treatment_var", "Treatment Variable:", choices = NULL),
-                                   uiOutput("confounders_balance_ui"),
-                                   actionButton("run_balance_check", "Run Balance Check", class = "btn-primary")
-                                 )
-                          ),
-                          column(8,
-                                 h4("Love Plot"),
-                                 plotOutput("love_plot"),
-                                 h4("SRM Check"),
-                                 verbatimTextOutput("srm_result"),
-                                 h4("Balance Table"),
-                                 verbatimTextOutput("balance_table")
-                          )
-                        )
-               )
-               
-               # Tab 4: NEW - Distribution Checker
-               , tabPanel("Distribution Checker",
-                          fluidRow(
-                            column(3,
-                                   wellPanel(
-                                     h4("Distribution Check Settings"),
-                                     selectInput("dist_treatment_var", "Treatment Variable:",
-                                                 choices = NULL),
-                                     selectInput("dist_target_var", "Target Variable:",
-                                                 choices = NULL),
-                                     radioButtons("plot_type", "Plot Type:",
-                                                  choices = c("Density Plot (Continuous)" = "density",
-                                                              "Bar Chart (Categorical)" = "bar"),
-                                                  selected = "density"),
-                                     actionButton("run_dist_check", "Generate Plot",
-                                                  class = "btn-primary"),
-                                     br(), br(),
-                                     h5("Variable Information:"),
-                                     verbatimTextOutput("var_info")
-                                   )
-                            ),
-                            column(9,
-                                   h4("Distribution Plot"),
-                                   conditionalPanel(
-                                     condition = "input.plot_type == 'density'",
-                                     div(class = "plot-container",
-                                         withSpinner(plotOutput("density_plot", height = "400px"),
-                                                     type = 4)
-                                     )
-                                   ),
-                                   conditionalPanel(
-                                     condition = "input.plot_type == 'bar'",
-                                     div(class = "plot-container",
-                                         withSpinner(plotOutput("bar_plot", height = "400px"),
-                                                     type = 4)
-                                     )
-                                   ),
-                                   h4("Summary Statistics"),
-                                   verbatimTextOutput("summary_stats")
-                            )
-                          )
-               )
-               ,
-               tabPanel("A/B Test Results",
-                        fluidRow(
-                          column(3,
-                                 wellPanel(
-                                   h4("A/B Test Configuration"),
-                                   selectInput("ab_treatment_var", "Treatment Variable:", choices = NULL),
-                                   selectInput("ab_metric_var", "Metric Variable:", choices = NULL),
-                                   textInput("control_group", "Control Group Name:", value = "control"),
-                                   selectInput("test_type", "Test Type:",
-                                               choices = c("t-test" = "t_test",
-                                                           "z-test" = "z_test",
-                                                           "Wilcoxon" = "wilcoxon",
-                                                           "Bootstrap" = "bootstrap"),
-                                               selected = "t_test"),
-                                   sliderInput("confidence_level", "Confidence Level:",
-                                               min = 0.8, max = 0.99, value = 0.95, step = 0.01),
-                                   actionButton("run_ab_test", "Run A/B Test", class = "btn-primary")
-                                 )
-                          ),
-                          column(9,
-                                 h4("A/B Test Results"),
-                                 
-                                 # Summary Statistics Card
-                                 div(class = "card",
-                                     div(class = "card-header", "Summary Statistics"),
-                                     div(class = "card-body",
-                                         tableOutput("ab_summary_table")
-                                     )
-                                 ),
-                                 
-                                 # Results Card
-                                 div(class = "card",
-                                     div(class = "card-header", "Test Results"),
-                                     div(class = "card-body",
-                                         fluidRow(
-                                           column(6,
-                                                  div(class = "result-box",
-                                                      h5("Effect Size (Cohen's d)"),
-                                                      textOutput("effect_size_output")
-                                                  ),
-                                                  div(class = "result-box",
-                                                      h5("Common Language Effect Size"),
-                                                      textOutput("cle_output")
-                                                  ),
-                                                  div(class = "result-box",
-                                                      h5("Test Power"),
-                                                      textOutput("power_output")
-                                                  )
-                                           ),
-                                           column(6,
-                                                  div(class = "result-box",
-                                                      h5("Difference (Treatment - Control)"),
-                                                      textOutput("difference_output")
-                                                  ),
-                                                  div(class = "result-box",
-                                                      h5("Relative Effect (%)"),
-                                                      textOutput("relative_effect_output")
-                                                  ),
-                                                  div(class = "result-box",
-                                                      h5("Confidence Interval"),
-                                                      textOutput("ci_output")
-                                                  )
-                                           )
-                                         ),
-                                         
-                                         # Hypothesis Test Result
-                                         div(class = "result-box",
-                                             h5("Hypothesis Test"),
-                                             uiOutput("test_result_output")
-                                         )
-                                     )
-                                 )
-                          )
-                        )
-               ),
-               
-               
-               tabPanel("Trend Analysis",
-                        fluidRow(
-                          column(3,
-                                 wellPanel(
-                                   h4("Trend Analysis Settings"),
-                                   selectInput("trend_treatment_var", "Treatment Variable:", choices = NULL),
-                                   selectInput("trend_metric_var", "Metric Variable:", choices = NULL),
-                                   selectInput("date_var", "Date Variable:", choices = NULL),
-                                   textInput("trend_control_group", "Control Group Name:", value = "control"),
-                                   actionButton("run_trend_analysis", "Generate Trend Plot",
-                                                class = "btn-primary")
-                                 )
-                          ),
-                          column(9,
-                                 h4("Metric Trend Over Time"),
-                                 withSpinner(plotOutput("trend_plot", height = "500px"), type = 4),
-                                 
-                                 div(class = "card",
-                                     div(class = "card-header", "Trend Summary"),
-                                     div(class = "card-body",
-                                         tableOutput("trend_summary_table")
-                                     )
-                                 )
-                          )
-                        )
+               column(8,
+                      h4("Randomized Data"),
+                      withSpinner(DTOutput("randomized_table"), type = 4),
+                      verbatimTextOutput("randomizer_info")
                )
              )
-  )
+    ),
+    
+    # Tab 3: Covariate Balance Checker
+    tabPanel("Balance Checker",
+             fluidRow(
+               column(4,
+                      wellPanel(
+                        h4("Balance Check Settings"),
+                        selectInput("treatment_var", "Treatment Variable:", choices = NULL),
+                        uiOutput("confounders_balance_ui"),
+                        actionButton("run_balance_check", "Run Balance Check", class = "btn-primary")
+                      )
+               ),
+               column(8,
+                      h4("Love Plot"),
+                      plotOutput("love_plot"),
+                      h4("SRM Check"),
+                      verbatimTextOutput("srm_result"),
+                      h4("Balance Table"),
+                      verbatimTextOutput("balance_table")
+               )
+             )
+    )
+    
+    # Tab 4: NEW - Distribution Checker
+    , tabPanel("Distribution Checker",
+               fluidRow(
+                 column(3,
+                        wellPanel(
+                          h4("Distribution Check Settings"),
+                          selectInput("dist_treatment_var", "Treatment Variable:",
+                                      choices = NULL),
+                          selectInput("dist_target_var", "Target Variable:",
+                                      choices = NULL),
+                          radioButtons("plot_type", "Plot Type:",
+                                       choices = c("Density Plot (Continuous)" = "density",
+                                                   "Bar Chart (Categorical)" = "bar"),
+                                       selected = "density"),
+                          actionButton("run_dist_check", "Generate Plot",
+                                       class = "btn-primary"),
+                          br(), br(),
+                          h5("Variable Information:"),
+                          verbatimTextOutput("var_info")
+                        )
+                 ),
+                 column(9,
+                        h4("Distribution Plot"),
+                        conditionalPanel(
+                          condition = "input.plot_type == 'density'",
+                          div(class = "plot-container",
+                              withSpinner(plotOutput("density_plot", height = "400px"),
+                                          type = 4)
+                          )
+                        ),
+                        conditionalPanel(
+                          condition = "input.plot_type == 'bar'",
+                          div(class = "plot-container",
+                              withSpinner(plotOutput("bar_plot", height = "400px"),
+                                          type = 4)
+                          )
+                        ),
+                        h4("Summary Statistics"),
+                        verbatimTextOutput("summary_stats")
+                 )
+               )
+    )
+    ,
+    tabPanel("A/B Test Results",
+             fluidRow(
+               column(3,
+                      wellPanel(
+                        h4("A/B Test Configuration"),
+                        selectInput("ab_treatment_var", "Treatment Variable:", choices = NULL),
+                        selectInput("ab_metric_var", "Metric Variable:", choices = NULL),
+                        textInput("control_group", "Control Group Name:", value = "control"),
+                        selectInput("test_type", "Test Type:",
+                                    choices = c("t-test" = "t_test",
+                                                "z-test" = "z_test",
+                                                "Wilcoxon" = "wilcoxon",
+                                                "Bootstrap" = "bootstrap"),
+                                    selected = "t_test"),
+                        sliderInput("confidence_level", "Confidence Level:",
+                                    min = 0.8, max = 0.99, value = 0.95, step = 0.01),
+                        actionButton("run_ab_test", "Run A/B Test", class = "btn-primary")
+                      )
+               ),
+               column(9,
+                      h4("A/B Test Results"),
+                      
+                      # Summary Statistics Card
+                      div(class = "card",
+                          div(class = "card-header", "Summary Statistics"),
+                          div(class = "card-body",
+                              tableOutput("ab_summary_table")
+                          )
+                      ),
+                      
+                      # Results Card
+                      div(class = "card",
+                          div(class = "card-header", "Test Results"),
+                          div(class = "card-body",
+                              fluidRow(
+                                column(6,
+                                       div(class = "result-box",
+                                           h5("Effect Size (Cohen's d)"),
+                                           textOutput("effect_size_output")
+                                       ),
+                                       div(class = "result-box",
+                                           h5("Common Language Effect Size"),
+                                           textOutput("cle_output")
+                                       ),
+                                       div(class = "result-box",
+                                           h5("Test Power"),
+                                           textOutput("power_output")
+                                       )
+                                ),
+                                column(6,
+                                       div(class = "result-box",
+                                           h5("Difference (Treatment - Control)"),
+                                           textOutput("difference_output")
+                                       ),
+                                       div(class = "result-box",
+                                           h5("Relative Effect (%)"),
+                                           textOutput("relative_effect_output")
+                                       ),
+                                       div(class = "result-box",
+                                           h5("Confidence Interval"),
+                                           textOutput("ci_output")
+                                       )
+                                )
+                              ),
+                              
+                              # Hypothesis Test Result
+                              div(class = "result-box",
+                                  h5("Hypothesis Test"),
+                                  uiOutput("test_result_output")
+                              )
+                          )
+                      )
+               )
+             )
+    ),
+    
+    
+    tabPanel("Trend Analysis",
+             fluidRow(
+               column(3,
+                      wellPanel(
+                        h4("Trend Analysis Settings"),
+                        selectInput("trend_treatment_var", "Treatment Variable:", choices = NULL),
+                        selectInput("trend_metric_var", "Metric Variable:", choices = NULL),
+                        selectInput("date_var", "Date Variable:", choices = NULL),
+                        textInput("trend_control_group", "Control Group Name:", value = "control"),
+                        actionButton("run_trend_analysis", "Generate Trend Plot",
+                                     class = "btn-primary")
+                      )
+               ),
+               column(9,
+                      h4("Metric Trend Over Time"),
+                      withSpinner(plotOutput("trend_plot", height = "500px"), type = 4),
+                      
+                      div(class = "card",
+                          div(class = "card-header", "Trend Summary"),
+                          div(class = "card-body",
+                              tableOutput("trend_summary_table")
+                          )
+                      )
+               )
+             )
+    )
   )
 )
 
+
 server <- function(input, output, session) {
   
-  # Authentication state
-  is_authenticated <- reactiveVal(FALSE)
-  user_email <- reactiveVal(NULL)
-  
-  # Function to verify Pathao email
-  verify_pathao_email <- function(email) {
-    is_valid <- grepl("@pathao\\.com$", tolower(email))
-    return(is_valid)
-  }
-  
-  # Check if we're running on Posit Connect
-  is_posit_connect <- function() {
-    Sys.getenv("R_CONFIG_ACTIVE") == "shinyapps" || 
-      Sys.getenv("R_CONFIG_ACTIVE") == "rsconnect" ||
-      !interactive()
-  }
-  
-  # Google authentication handler
-  authenticate_google <- function() {
-    tryCatch({
-      if (is_posit_connect()) {
-        # On Posit Connect, use service account or manual authentication
-        # For now, we'll rely on manual email input
-        return(NULL)
-      } else {
-        # Local development - use normal Google auth
-        bq_auth(
-          cache = ".secrets",
-          email = TRUE
-        )
-        return(TRUE)
-      }
-    }, error = function(e) {
-      return(FALSE)
-    })
-  }
-  
-  # Get user email from authentication (simplified for Posit Connect)
-  get_user_email <- function() {
-    # On Posit Connect, we can't easily get email from Google auth
-    # So we'll use the manual input or a simulated approach
-    if (is_posit_connect()) {
-      # Return the manually entered email or a placeholder
-      if (!is.null(input$manual_email) && nzchar(input$manual_email)) {
-        return(input$manual_email)
-      }
-      return("user@pathao.com")  # Placeholder for demo
-    } else {
-      # Local development - try to get email from Google auth
-      tryCatch({
-        token <- gargle::token_fetch()
-        if (!is.null(token$email)) return(token$email)
-        return(NULL)
-      }, error = function(e) {
-        return(NULL)
-      })
-    }
-  }
-  
-  # Manual authentication handler for Posit Connect
-  observeEvent(input$manual_auth, {
-    email <- trimws(input$manual_email)
-    
-    if (nzchar(email)) {
-      if (verify_pathao_email(email)) {
-        # Success - Pathao email verified
-        is_authenticated(TRUE)
-        user_email(email)
-        hide("auth_ui")
-        show("main_ui")
-        shinyalert("Welcome!", paste("Authenticated as:", email), type = "success")
-      } else {
-        # Not a Pathao email
-        shinyalert("Access Denied", 
-                   paste("Only @pathao.com emails are allowed.\n",
-                         "Please use your Pathao email address."), 
-                   type = "error")
-      }
-    } else {
-      shinyalert("Error", "Please enter your @pathao.com email address.", type = "error")
-    }
-  })
-  
-  # Google authentication button handler
-  observeEvent(input$auth_btn, {
-    showModal(modalDialog(
-      title = "Google Authentication",
-      tags$div(
-        if (is_posit_connect()) {
-          tags$p("On Posit Connect, please use the manual email input below for authentication.")
-        } else {
-          tagList(
-            tags$p("Please sign in with your Pathao Google account (@pathao.com)"),
-            tags$p("1. A browser window will open for Google authentication"),
-            tags$p("2. Sign in with your @pathao.com account"),
-            tags$p("3. Grant BigQuery access permissions"),
-            tags$p("4. Return to this window")
-          )
-        }
-      ),
-      footer = modalButton("Close"),
-      easyClose = FALSE
-    ))
-    
-    if (is_posit_connect()) {
-      # On Posit Connect, suggest using manual authentication
-      removeModal()
-      shinyalert("Info", 
-                 "For Posit Connect deployment, please use the manual email input below the Google sign-in button.", 
-                 type = "info")
-      return()
-    }
-    
-    tryCatch({
-      # Local development - use Google auth
-      success <- authenticate_google()
-      
-      if (success) {
-        email <- get_user_email()
-        
-        if (!is.null(email) && verify_pathao_email(email)) {
-          # Success
-          removeModal()
-          is_authenticated(TRUE)
-          user_email(email)
-          hide("auth_ui")
-          show("main_ui")
-          shinyalert("Welcome!", paste("Authenticated as:", email), type = "success")
-        } else {
-          removeModal()
-          shinyalert("Authentication Error", 
-                     "Could not verify Pathao email. Please try again.", 
-                     type = "error")
-        }
-      } else {
-        removeModal()
-        shinyalert("Authentication Failed", 
-                   "Google authentication failed. Please try again or use manual email input.", 
-                   type = "error")
-      }
-      
-    }, error = function(e) {
-      removeModal()
-      shinyalert("Authentication Failed", 
-                 paste("Error:", e$message), 
-                 type = "error")
-    })
-  })
-  
-  # Display user email in the app
-  output$user_info <- renderUI({
-    req(user_email())
-    tags$div(
-      style = "position: absolute; top: 10px; right: 10px; background: #f8f9fa; padding: 8px 15px; border-radius: 20px; border: 1px solid #ddd;",
-      tags$span(icon("user"), "Logged in as: ", tags$strong(user_email()))
-    )
-  })
-  
-  # Add user info to main UI
-  insertUI(
-    selector = "#main_ui",
-    where = "afterBegin",
-    ui = uiOutput("user_info")
-  )
-  
-  # For Posit Connect, we need to handle BigQuery authentication differently
-  # Use service account or other authentication methods
-  
-  # YOUR EXISTING SERVER CODE STARTS HERE
   # Reactive values
   query_results <- reactiveVal(NULL)
   randomized_data <- reactiveVal(NULL)
-  
-  # Modified data_loader function for Posit Connect
-  data_loader <- function(project_id, query) {
-    if (is_posit_connect()) {
-      # On Posit Connect, you'll need to use service account authentication
-      # This requires setting up a service account JSON key
-      shinyalert("Info", "BigQuery access on Posit Connect requires service account setup. Please contact administrator.", type = "info")
-      return(data.frame())  # Return empty dataframe
-    } else {
-      # Local development - use normal authentication
-      bq_auth()
-      job <- bq_project_query(project_id, query)
-      results <- bq_table_download(job)
-      return(results)
-    }
-  }
   
   # SQL Runner Tab
   observeEvent(input$run_query, {
@@ -614,7 +391,6 @@ server <- function(input, output, session) {
     })
   })
   
-  # ... [KEEP THE REST OF YOUR EXISTING SERVER CODE] ...
   output$results_table <- renderDT({
     req(query_results())
     datatable(query_results(), options = list(scrollX = TRUE, scrollY = 400))
